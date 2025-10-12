@@ -1,6 +1,6 @@
 # main.py
 import argparse, json
-from analyzer import analyze_audio_summary
+from analyzer.analyzer import analyze_audio_summary
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="유튜브/MP3 오디오 분석 (Demucs 보컬 분리 + 필터링 + 시각화)")

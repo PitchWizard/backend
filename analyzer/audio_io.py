@@ -4,6 +4,7 @@ from typing import Tuple
 import numpy as np
 import librosa
 import yt_dlp
+import sys
 
 def download_youtube_audio(url: str) -> str:
     print("[1/5] 유튜브 다운로드 시작…", flush=True)
@@ -33,7 +34,7 @@ def separate_vocals_demucs(input_path: str) -> str:
     print("[2/5] Demucs 보컬 분리 시작…", flush=True)
     tmp_out = tempfile.mkdtemp()
     cmd = [
-        "python", "-m", "demucs",
+        sys.executable, "-m", "demucs",
         "-n", "htdemucs",
         "--two-stems=vocals",
         input_path,
