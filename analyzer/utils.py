@@ -1,5 +1,4 @@
-## 헤르츠 -> 음계 변환 유틸리티
-
+# api/utils.py
 from __future__ import annotations
 from typing import Optional
 

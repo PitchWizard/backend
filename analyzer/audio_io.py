@@ -1,10 +1,9 @@
-## 오디오 입출력 관련 유틸 (다운 및 전처리)
-import os, tempfile, subprocess
+# api/audio_io.py
+import os, tempfile, subprocess, sys
 from typing import Tuple
 import numpy as np
 import librosa
 import yt_dlp
-import sys
 
 def download_youtube_audio(url: str) -> str:
     print("[1/5] 유튜브 다운로드 시작…", flush=True)
