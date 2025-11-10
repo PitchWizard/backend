@@ -20,3 +20,11 @@ SessionLocal = sessionmaker(
 
 # ✅ 베이스 클래스 선언
 Base = declarative_base()
+
+# ✅ FastAPI 의존성 주입용 (필수)
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

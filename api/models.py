@@ -1,5 +1,5 @@
 # api/models.py
-from sqlalchemy import Column, Integer, String, Float, TIMESTAMP, text
+from sqlalchemy import Column, Integer, String, Float, TIMESTAMP, text, UniqueConstraint
 from .database import Base   # ✅ Base를 database.py에서 불러오기
 
 class Song(Base):
@@ -17,6 +17,9 @@ class Song(Base):
     updated_at = Column(
         TIMESTAMP,
         server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP")
+    )
+    __table_args__ = (
+        UniqueConstraint("title", "artist", name="uq_title_artist"),  # 필요 없으면 삭제
     )
 
 class User(Base):
