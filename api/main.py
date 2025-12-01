@@ -3,8 +3,11 @@ from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
 from sqlalchemy.orm import Session
 from sqlalchemy.engine import Row
+from fastapi.middleware.cors import CORSMiddleware
+
 
 # DB/ORM
+from .models import User
 from .database import engine, Base, get_db
 from . import models, crud
 
@@ -20,6 +23,18 @@ Base.metadata.create_all(bind=engine)
 # FastAPI 앱
 # ---------------------------
 app = FastAPI(title="Vocal Wizard API")
+
+origins = [
+    "http://localhost:5173",  # Vite 기본 포트
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ---------------------------
 # Pydantic Schemas (v2)
@@ -61,7 +76,20 @@ class UserOut(BaseModel):
     midi_min: float
     midi_median: float
     midi_max: float
+    low_note: str | None = None
+    high_note: str | None = None
+    avg_rms: float | None = None
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+class VocalRangeRequest(BaseModel):
+    user_id: int
+    midi_min: float
+    midi_median: float
+    midi_max: float
+    low_note: str | None = None
+    high_note: str | None = None
+    avg_rms: float | None = None
+
 
 # ---------------------------
 # Row/ORM ↔ Pydantic 보정 유틸
@@ -195,3 +223,21 @@ def list_users(limit: int = 50, db: Session = Depends(get_db)):
 @app.get("/")
 def root():
     return {"status": "FastAPI running properly"}
+
+@app.post("/vocal-range")
+def save_vocal_range(data: VocalRangeRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.user_id == data.user_id).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.midi_min = data.midi_min
+    user.midi_median = data.midi_median
+    user.midi_max = data.midi_max
+    user.low_note = data.low_note
+    user.high_note = data.high_note
+    user.avg_rms = data.avg_rms
+
+    db.commit()
+
+    return {"status": "ok"}
