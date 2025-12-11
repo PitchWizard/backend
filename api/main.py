@@ -4,6 +4,10 @@ from pydantic import BaseModel, EmailStr, Field, ConfigDict
 from sqlalchemy.orm import Session
 from sqlalchemy.engine import Row
 from fastapi.middleware.cors import CORSMiddleware
+from .services.recommend_service import (
+    get_transpose_for_song,
+    get_recommended_songs_for_user,
+)
 
 
 # DB/ORM
@@ -25,12 +29,12 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(title="Vocal Wizard API")
 
 origins = [
-    "http://localhost:5173",  # Vite 기본 포트
+    "http://localhost:5173",  # Vite 기본 포트 일단 안씀
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -241,3 +245,37 @@ def save_vocal_range(data: VocalRangeRequest, db: Session = Depends(get_db)):
     db.commit()
 
     return {"status": "ok"}
+
+@app.get("/songs/{song_id}/transpose")
+def api_get_transpose_for_song(
+    song_id: int,
+    user_id: int,  # /songs/1/transpose?user_id=3 이런 식으로 부름
+    db: Session = Depends(get_db),
+):
+    try:
+        result = get_transpose_for_song(db, user_id=user_id, song_id=song_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return result
+
+
+@app.get("/songs/recommend")
+def api_get_recommended_songs(
+    user_id: int,
+    db: Session = Depends(get_db),
+):
+    try:
+        result = get_recommended_songs_for_user(db, user_id=user_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return result
+
+@app.delete("/songs/{song_id}")
+def delete_song(song_id: int, db: Session = Depends(get_db)):
+    song = db.query(models.Song).filter(models.Song.song_id == song_id).first()
+    if not song:
+        raise HTTPException(status_code=404, detail="Song not found")
+
+    db.delete(song)
+    db.commit()
+    return {"message": "Song deleted"}
