@@ -71,6 +71,14 @@ rubberband-*/
 .claude/
 
 # ======================
+# 🖥️ 프론트엔드 (별도 레포)
+# ======================
+frontend/
+node_modules/
+package.json
+package-lock.json
+
+# ======================
 # 📂 outputs (생성 파일)
 # ======================
 outputs/
