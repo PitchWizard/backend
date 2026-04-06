@@ -17,8 +17,6 @@ class EnergySummary:
     rms_std: float
 
 def compute_rms(y, sr, hop_length=256):
-    """RMS를 한 곳(features.py)에서만 정의해 모든 모듈이 공통 사용."""
-    print("[4/5] RMS 에너지 추출 중…", flush=True)
     rms = librosa.feature.rms(y=y, hop_length=hop_length)[0]
     times = librosa.frames_to_time(np.arange(len(rms)), sr=sr, hop_length=hop_length)
     return rms, times
