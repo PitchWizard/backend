@@ -36,22 +36,18 @@ def analyze_and_save(
     title: str,
     artist: str,
     audio_path: str,
-    engine: str = "pyin",
-    target_sr: int = 22050,
     hop_length: int = 256,
     plot: bool = False,
-) -> int:
+) -> tuple[int, str | None]:
     """
-    1) analyzer 실행
+    1) analyzer 실행 (RMVPE)
     2) 결과 5개 지표만 추출
     3) title/artist 붙여 DB 저장
-    4) 생성된 곡의 PK 반환
+    4) (song_id, instrumental_path) 반환
     """
     # 1) 분석
     out = analyze_audio_summary(
         audio_path,
-        engine=engine,
-        target_sr=target_sr,
         hop_length=hop_length,
         plot=plot,
     )
@@ -77,7 +73,7 @@ def analyze_and_save(
             rms_mean=payload["rms_mean"],
             rms_std=payload["rms_std"],
         )
-        # 모델 PK명이 song_id면 song_id, id면 id를 반환
-        return getattr(row, "song_id", getattr(row, "id", None))
+        song_id = getattr(row, "song_id", getattr(row, "id", None))
+        return song_id, out.get("instrumental_path")
     finally:
         db.close()

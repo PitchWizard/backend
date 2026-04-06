@@ -1,5 +1,5 @@
 # api/audio_io.py
-import os, tempfile, subprocess, sys
+import os, tempfile
 from typing import Tuple
 import numpy as np
 import librosa
@@ -29,32 +29,46 @@ def download_youtube_audio(url: str) -> str:
             return path
     raise FileNotFoundError("유튜브 다운로드 실패")
 
-def separate_vocals_demucs(input_path: str) -> str:
-    print("[2/5] Demucs 보컬 분리 시작…", flush=True)
+def separate_vocals_uvr5_mdx(input_path: str) -> tuple[str, str]:
+    """보컬과 반주를 분리한다.
+
+    Returns:
+        (vocals_path, instrumental_path)
+    """
+    print("[2/5] Kim_Vocal_2 보컬 분리 시작…", flush=True)
+
+    try:
+        from audio_separator.separator import Separator
+    except ImportError:
+        raise ImportError(
+            "audio-separator 패키지가 필요합니다.\n"
+            "GPU 사용: pip install audio-separator[gpu]\n"
+            "CPU 전용: pip install audio-separator"
+        )
+
     tmp_out = tempfile.mkdtemp()
-    cmd = [
-        sys.executable, "-m", "demucs",
-        "-n", "htdemucs",
-        "--two-stems=vocals",
-        input_path,
-        "-o", tmp_out,
-    ]
-    subprocess.run(cmd, check=True)
+    separator = Separator(output_dir=tmp_out)
+    separator.load_model("Kim_Vocal_2.onnx")
+    output_files = separator.separate(input_path)
 
     vocals_path = None
-    for root, _, files in os.walk(tmp_out):
-        for f in files:
-            if f.lower() == "vocals.wav":
-                vocals_path = os.path.join(root, f)
-                break
-        if vocals_path:
-            break
+    instrumental_path = None
+    for f in output_files:
+        basename = os.path.basename(f)
+        full = f if os.path.isabs(f) else os.path.join(tmp_out, basename)
+        if "(Vocals)" in basename:
+            vocals_path = full
+        elif "(Instrumental)" in basename:
+            instrumental_path = full
 
     if vocals_path is None:
-        raise FileNotFoundError("Demucs 출력에서 vocals.wav을 찾을 수 없음")
+        raise FileNotFoundError("분리 결과에서 보컬 파일을 찾을 수 없음")
+    if instrumental_path is None:
+        raise FileNotFoundError("분리 결과에서 반주 파일을 찾을 수 없음")
 
-    print(f"[2/5] 보컬 파일 경로: {vocals_path}", flush=True)
-    return vocals_path
+    print(f"[2/5] 보컬: {vocals_path}", flush=True)
+    print(f"[2/5] 반주: {instrumental_path}", flush=True)
+    return vocals_path, instrumental_path
 
 def load_audio(source: str, target_sr: int = 22050, mono: bool = True) -> Tuple[np.ndarray, int]:
     print("[3/5] 오디오 로딩/리샘플링 시작…", flush=True)
