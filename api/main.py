@@ -15,8 +15,10 @@ from .services.recommend_service import (
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INSTRUMENTAL_DIR = os.path.join(_PROJECT_ROOT, "outputs", "instrumentals")
 SHIFTED_DIR = os.path.join(_PROJECT_ROOT, "outputs", "shifted")
+PITCH_FRAMES_DIR = os.path.join(_PROJECT_ROOT, "outputs", "pitch_frames")
 os.makedirs(INSTRUMENTAL_DIR, exist_ok=True)
 os.makedirs(SHIFTED_DIR, exist_ok=True)
+os.makedirs(PITCH_FRAMES_DIR, exist_ok=True)
 
 
 # DB/ORM
@@ -52,15 +54,6 @@ app.add_middleware(
 # ---------------------------
 # Pydantic Schemas (v2)
 # ---------------------------
-class SongCreate(BaseModel):
-    title: str = Field(min_length=1)
-    artist: str = Field(min_length=1)
-    midi_min: float
-    midi_median: float
-    midi_max: float
-    rms_mean: float
-    rms_std: float
-
 class SongOut(BaseModel):
     # 모델 PK가 song_id든 id든 모두 수용
     song_id: int = Field(validation_alias="id")
@@ -150,23 +143,6 @@ def read_songs(limit: int = 50, db: Session = Depends(get_db)):
     items = crud.list_songs(db, limit=limit)
     return as_list_of(items, SongOut, model_type=models.Song)
 
-@app.post("/songs", response_model=SongOut, status_code=201)
-def create_song(body: SongCreate, db: Session = Depends(get_db)):
-    try:
-        song = crud.add_song(
-            db=db,
-            title=body.title,
-            artist=body.artist,
-            midi_min=body.midi_min,
-            midi_median=body.midi_median,
-            midi_max=body.midi_max,
-            rms_mean=body.rms_mean,
-            rms_std=body.rms_std,
-        )
-        # 단일 객체도 스키마로 확실히 직렬화
-        return SongOut.model_validate(song)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/songs/run", response_model=SongOut, status_code=201)
 async def run_analysis_and_create_song(
@@ -286,6 +262,22 @@ def api_get_recommended_songs(
         raise HTTPException(status_code=404, detail=str(e))
     return result
 
+# ---------------------------
+# AUTH
+# ---------------------------
+@app.post("/login", response_model=UserOut)
+def login(
+    username: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    from .security import verify_password
+    user = crud.get_user_by_username(db, username)
+    if not user or not verify_password(password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="아이디 또는 비밀번호가 올바르지 않습니다.")
+    return UserOut.model_validate(user)
+
+
 @app.delete("/songs/{song_id}")
 def delete_song(song_id: int, db: Session = Depends(get_db)):
     song = db.query(models.Song).filter(models.Song.song_id == song_id).first()
@@ -299,6 +291,17 @@ def delete_song(song_id: int, db: Session = Depends(get_db)):
 
 # ---------------------------
 # ACCOMPANIMENT (반주 피치시프트)
+@app.get("/songs/{song_id}/pitch-frames")
+def get_pitch_frames(song_id: int, db: Session = Depends(get_db)):
+    """곡의 RMVPE 피치 프레임 데이터 반환 (10ms 단위)"""
+    import json as _json
+    frames_path = os.path.join(PITCH_FRAMES_DIR, f"{song_id}.json")
+    if not os.path.exists(frames_path):
+        raise HTTPException(status_code=404, detail="피치 프레임 데이터가 없습니다. 곡을 다시 분석해주세요.")
+    with open(frames_path) as f:
+        return _json.load(f)
+
+
 # ---------------------------
 @app.get("/songs/{song_id}/accompaniment")
 def get_accompaniment(

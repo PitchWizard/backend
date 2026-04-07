@@ -29,7 +29,6 @@ def analyze_audio_summary(source: str, hop_length=HOP_LENGTH_DEFAULT, plot=False
     # RMVPE는 16kHz 필요
     y, sr = load_audio(vocals_path, target_sr=RMVPE_SR, mono=True)
 
-    print("[4/5] RMVPE 피치 추출 중…", flush=True)
     from .rmvpe import RMVPE
 
     if not os.path.exists(RMVPE_MODEL_PATH):
@@ -38,24 +37,12 @@ def analyze_audio_summary(source: str, hop_length=HOP_LENGTH_DEFAULT, plot=False
             "다운로드: https://huggingface.co/lj1995/VoiceConversionWebUI/blob/main/rmvpe.pt"
         )
 
+    print("[4/5] RMVPE 피치 추출 중…", flush=True)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"[RMVPE] device={device}", flush=True)
-
     rmvpe_model = RMVPE(RMVPE_MODEL_PATH, is_half=False, device=device)
     f0_hz = rmvpe_model.infer_from_audio(y, thred=0.03)
     f0_hz = np.where(f0_hz > 0, f0_hz, np.nan)  # 0(무성음) → NaN
     times = np.arange(len(f0_hz)) * (RMVPE_HOP / RMVPE_SR)  # 10ms 단위
-
-    # 디버그 로그
-    valid_f0 = f0_hz[~np.isnan(f0_hz)]
-    if len(valid_f0) > 0:
-        raw_max_hz = float(np.max(valid_f0))
-        raw_min_hz = float(np.min(valid_f0))
-        print(f"[디버그] 최저 Hz: {raw_min_hz:.2f}, 최고 Hz: {raw_max_hz:.2f}", flush=True)
-        max_midi = float(librosa.hz_to_midi(raw_max_hz))
-        min_midi = float(librosa.hz_to_midi(raw_min_hz))
-        print(f"[디버그] 최저음: {librosa.midi_to_note(min_midi, octave=True)} (MIDI {min_midi:.2f}), "
-              f"최고음: {librosa.midi_to_note(max_midi, octave=True)} (MIDI {max_midi:.2f})", flush=True)
 
     rms, _ = compute_rms(y, sr, hop_length=hop_length)
     p_sum = summarize_pitch(f0_hz, sr=RMVPE_SR, hop_length=RMVPE_HOP)
@@ -70,7 +57,10 @@ def analyze_audio_summary(source: str, hop_length=HOP_LENGTH_DEFAULT, plot=False
         ax.plot(times, f0_hz, label='f0 (RMVPE)', linewidth=2)
         ax.legend()
         plt.savefig("pitch_track.png")
-        print("[시각화] pitch_track.png 저장 완료", flush=True)
+
+    # 프레임 데이터 직렬화 (NaN → None)
+    hz_list = [float(v) if not np.isnan(v) else None for v in f0_hz]
+    times_list = [round(float(t), 4) for t in times]
 
     return {
         "engine": "rmvpe",
@@ -87,4 +77,9 @@ def analyze_audio_summary(source: str, hop_length=HOP_LENGTH_DEFAULT, plot=False
         "rms_mean": float(e_sum.rms_mean),
         "rms_std": float(e_sum.rms_std),
         "instrumental_path": instrumental_path,
+        "pitch_frames": {
+            "hop_ms": 10,
+            "times": times_list,
+            "hz": hz_list,
+        },
     }

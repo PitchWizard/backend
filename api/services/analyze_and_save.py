@@ -1,4 +1,6 @@
 # api/services/analyze_and_save.py
+import os
+import json
 
 # 상대 임포트로 고정 (패키지 인식 문제 방지)
 from ..database import SessionLocal
@@ -6,6 +8,10 @@ from .. import crud
 
 # 너의 분석기 함수 직접 호출
 from analyzer.analyzer import analyze_audio_summary
+
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PITCH_FRAMES_DIR = os.path.join(_PROJECT_ROOT, "outputs", "pitch_frames")
+os.makedirs(PITCH_FRAMES_DIR, exist_ok=True)
 
 
 def _extract_7_fields(out: dict) -> dict:
@@ -43,7 +49,8 @@ def analyze_and_save(
     1) analyzer 실행 (RMVPE)
     2) 결과 5개 지표만 추출
     3) title/artist 붙여 DB 저장
-    4) (song_id, instrumental_path) 반환
+    4) pitch_frames를 outputs/pitch_frames/{song_id}.json에 저장
+    5) (song_id, instrumental_path) 반환
     """
     # 1) 분석
     out = analyze_audio_summary(
@@ -60,7 +67,8 @@ def analyze_and_save(
         **metrics,
     }
 
-    # 3) 저장
+    # 3) DB 저장
+    print("[5/5] DB 저장 중…", flush=True)
     db = SessionLocal()
     try:
         row = crud.add_song(
@@ -74,6 +82,14 @@ def analyze_and_save(
             rms_std=payload["rms_std"],
         )
         song_id = getattr(row, "song_id", getattr(row, "id", None))
-        return song_id, out.get("instrumental_path")
     finally:
         db.close()
+
+    # 4) pitch_frames 파일 저장
+    pitch_frames = out.get("pitch_frames")
+    if pitch_frames and song_id:
+        frames_path = os.path.join(PITCH_FRAMES_DIR, f"{song_id}.json")
+        with open(frames_path, "w") as f:
+            json.dump(pitch_frames, f)
+
+    return song_id, out.get("instrumental_path")
