@@ -6,3 +6,7 @@ def hash_password(plain: str) -> str:
     if plain is None:
         return ""
     return hashlib.sha256(plain.encode('utf-8')).hexdigest()
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    return hash_password(plain) == hashed
