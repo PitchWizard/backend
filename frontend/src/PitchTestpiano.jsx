@@ -1,16 +1,15 @@
 // PitchTestpiano.jsx
 import React, { useEffect, useRef, useState } from "react";
-import saveVocalRange from "./api/vocalRangeApi";   // ✅ default import
-
+import { Mic, Square, Download } from "lucide-react";
 
 const DEFAULTS = {
-  measureWindowSec: 2.5, // 사용자의 음정 측정 시간
+  measureWindowSec: 2.5,
   voiceOnsetRmsThreshold: 0.015,
-  frameIntervalMs: 60,  // frame 간격
-  strongCents: 40,  // strong 판정 기준 (기준음과의 차이가 40 cents 이내)
-  weakCents: 75,  // weak 판정 기준 (기준음과의 차이가 75 cents 이내)
-  strongPercent: 0.6, // strong 판정 기준 (전체 프레임 중 strong 프레임의 비율 == 60% 이상)
-  weakPercent: 0.4,  // weak 판정 기준 (전체 프레임 중 weak 프레임의 비율 == 40% 이상)
+  frameIntervalMs: 60,
+  strongCents: 40,
+  weakCents: 75,
+  strongPercent: 0.6,
+  weakPercent: 0.4,
 };
 
 function midiToFreq(m) {
@@ -168,7 +167,9 @@ function estimateTessitura(results, opts = {}) {
   return { tessitura: segments[0], segments };
 }
 
-export default function PitchTestPiano() {
+import saveVocalRange from "./api/vocalRangeApi";
+
+export default function PitchTestPiano({ userId, onTestComplete }) {
   const audioCtxRef = useRef(null);
   const analyserRef = useRef(null);
   const mediaStreamRef = useRef(null);
@@ -183,9 +184,8 @@ export default function PitchTestPiano() {
   const [currentNote, setCurrentNote] = useState(null);
   const [pitchHistory, setPitchHistory] = useState([]);
   const [downloadUrl, setDownloadUrl] = useState(null);
-  const [tessitura, setTessitura] = useState(null); // ✅ 추가: 테시투라 상태
-  // ✅ 음별 재도전 관리 (각 음별 1회)
-  const [retriedNotes, setRetriedNotes] = useState([]); // 이미 재시도한 음 리스트
+  const [tessitura, setTessitura] = useState(null);
+  const [retriedNotes, setRetriedNotes] = useState([]);
   const [retryingNote, setRetryingNote] = useState(null);
 
   useEffect(() => () => stopAll(), []);
@@ -225,6 +225,7 @@ export default function PitchTestPiano() {
     isRecording.current = true;
     setDownloadUrl(null);
   }
+
   function stopRecording() {
     if (!isRecording.current) return;
     isRecording.current = false;
@@ -233,7 +234,6 @@ export default function PitchTestPiano() {
     const wavBlob = encodeWAV(data, ctx.sampleRate);
     const url = URL.createObjectURL(wavBlob);
     setDownloadUrl(url);
-
 
     recBuffers.current = [];
     recLength.current = 0;
@@ -283,8 +283,7 @@ export default function PitchTestPiano() {
     const startTime = ctx.currentTime;
     while (ctx.currentTime - startTime < DEFAULTS.measureWindowSec) {
       analyser.getFloatTimeDomainData(timeDomain);
-      const { freq, rms } = autocorrelate(timeDomain, ctx.sampleRate);
-      console.log("RMS:", rms, "Freq:", freq);
+      const { freq } = autocorrelate(timeDomain, ctx.sampleRate);
 
       if (freq > 0) {
         const cents = Math.abs(freqToCents(noteObj.freq, freq));
@@ -307,23 +306,31 @@ export default function PitchTestPiano() {
   async function startSequence() {
     setResults([]);
     setStatus("running");
-    // 새 테스트 시작할 때 이전 재시도 기록 초기화
     setRetriedNotes([]);
     setRetryingNote(null);
     await initAudio();
     startRecording();
 
     const res = [];
+    let consecutiveFailCount = 0;
     for (const n of NOTES_TO_TEST) {
       const r = await runNoteTest(n);
       res.push(r);
       setResults([...res]);
+
+      if (r.grade === "Fail") consecutiveFailCount += 1;
+      else consecutiveFailCount = 0;
+
+      if (consecutiveFailCount >= 3) {
+        console.warn("❌ 연속 3회 실패 → 테스트 종료");
+        break;
+      }
+
       await new Promise((s) => setTimeout(s, 400));
     }
 
     stopRecording();
 
-    // 테시투라 분석
     const { tessitura, segments } = estimateTessitura(res, {
       strongThreshold: DEFAULTS.strongPercent,
       minNotes: 3,
@@ -333,7 +340,6 @@ export default function PitchTestPiano() {
     console.log("🎼 Tessitura 분석 결과:", tessitura);
     console.log("📊 모든 구간:", segments);
 
-        // MIDI 값 계산
     let midi_min = null, midi_max = null, midi_median = null;
     if (tessitura) {
       const midiValues = tessitura.notes.map(
@@ -346,95 +352,71 @@ export default function PitchTestPiano() {
         midiValues.length % 2 === 1
           ? midiValues[Math.floor(midiValues.length / 2)]
           : (midiValues[midiValues.length / 2 - 1] +
-            midiValues[midiValues.length / 2]) /
+              midiValues[midiValues.length / 2]) /
             2;
     }
 
-    // 🔹 avg_rms는 아직 따로 계산 안 하니까, 일단 null로 보내고 나중에 원하면 계산 로직 추가
-    const avgRms = null;
-
-    // 🔹 서버 전송용 payload (백엔드 /vocal-range 스키마에 맞춤)
-    const payload = tessitura
-      ? {
-          user_id: 1,              // TODO: 로그인 붙이면 실제 유저 id로 교체
-          midi_min,
-          midi_median,
-          midi_max,
-          low_note: tessitura.low,
-          high_note: tessitura.high,
-          avg_rms: avgRms,
-        }
-      : null;
-
-    console.log(
-      "📤 서버로 전송할 테시투라 데이터:",
-      JSON.stringify(payload, null, 2)
-    );
-
-    // 🔹 백엔드로 전송
-    if (payload) {
+    if (tessitura && userId) {
+      const payload = {
+        user_id: userId,
+        midi_min,
+        midi_median,
+        midi_max,
+        low_note: tessitura.low,
+        high_note: tessitura.high,
+        avg_rms: null,
+      };
       try {
-        const res = await saveVocalRange(payload);
-        console.log("✅ 음역 정보 저장 완료:", res);
-      } catch (err) {
-        console.error("❌ 음역 정보 저장 실패:", err);
+        await saveVocalRange(payload);
+        onTestComplete?.({ midi_min, midi_median, midi_max, low_note: tessitura.low, high_note: tessitura.high });
+      } catch (e) {
+        console.error("음역대 저장 실패:", e);
       }
     }
 
     setStatus("done");
-
   }
 
-
-  // 재도전 함수
   async function retryNote(noteName) {
     if (retriedNotes.includes(noteName)) {
       alert(`${noteName} 음은 이미 재도전했습니다.`);
       return;
     }
 
-    const noteObj = NOTES_TO_TEST.find(n => n.note === noteName);
+    const noteObj = NOTES_TO_TEST.find((n) => n.note === noteName);
     if (!noteObj) return;
 
-    const cur = results.find(r => r.note === noteName);
+    const cur = results.find((r) => r.note === noteName);
     if (!cur || (cur.grade !== "Weak OK" && cur.grade !== "Fail")) {
       alert("재도전은 Weak OK 또는 Fail인 음만 가능합니다.");
       return;
     }
 
-    // 성공한 범위 계산
     const successGrades = ["Strong OK", "Weak OK"];
     const successIndices = results
       .map((r, i) => ({ i, grade: r.grade }))
-      .filter(x => successGrades.includes(x.grade))
-      .map(x => x.i);
+      .filter((x) => successGrades.includes(x.grade))
+      .map((x) => x.i);
 
     if (successIndices.length === 0) {
       alert("성공한 음이 없어서 재도전 대상 범위를 계산할 수 없습니다.");
       return;
     }
 
-    const noteIndex = NOTES_TO_TEST.findIndex(n => n.note === noteName);
-    const minSucc = Math.min(...successIndices);
-    const maxSucc = Math.max(...successIndices);
-
-
-    // ===== 재도전 실행 =====
     setRetryingNote(noteName);
     setStatus("retrying");
 
     try {
-      await initAudio();     // 🎵 오디오 초기화 (이제 playTone 가능)
+      await initAudio();
       startRecording();
 
-      const updated = await runNoteTest(noteObj); // 제시음 재생 + 사용자 입력 측정
+      const updated = await runNoteTest(noteObj);
 
       stopRecording();
-      stopAll(); // 오디오 종료
+      stopAll();
 
-      // 결과 갱신
-      setResults(prev => {
-        const next = prev.map(r => (r.note === noteName ? updated : r));
+      setResults((prev) => {
+        const next = prev.map((r) => (r.note === noteName ? updated : r));
         const { tessitura: newTessitura } = estimateTessitura(next, {
           strongThreshold: DEFAULTS.strongPercent,
           minNotes: 3,
@@ -444,8 +426,7 @@ export default function PitchTestPiano() {
         return next;
       });
 
-      // ✅ 이 음은 재시도 완료 목록에 추가
-      setRetriedNotes(prev => [...prev, noteName]);
+      setRetriedNotes((prev) => [...prev, noteName]);
       setStatus("done");
     } catch (err) {
       console.error("retryNote error", err);
@@ -455,8 +436,6 @@ export default function PitchTestPiano() {
       setRetryingNote(null);
     }
   }
-
-
 
   function stopAll() {
     stopRecording();
@@ -471,14 +450,19 @@ export default function PitchTestPiano() {
     setStatus("idle");
   }
 
-  // 그래프 C2~C7
   function drawCanvas() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     const width = canvas.width,
       height = canvas.height;
+
     ctx.clearRect(0, 0, width, height);
+
+    // 흰 배경 유지 (어두운 UI 위에서도 가독성 확보)
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, width, height);
+
     const minMidi = 36; // C2
     const maxMidi = 96; // C7
 
@@ -493,7 +477,7 @@ export default function PitchTestPiano() {
       if (m % 12 === 0) {
         ctx.fillStyle = "black";
         ctx.font = "12px sans-serif";
-        ctx.fillText(midiToNoteName(m), 5, y - 2);
+        ctx.fillText(midiToNoteName(m), 8, y - 4);
       }
     }
 
@@ -510,7 +494,8 @@ export default function PitchTestPiano() {
       }
     }
 
-    ctx.strokeStyle = "blue";
+    ctx.strokeStyle = "#0b5cff";
+    ctx.lineWidth = 2;
     ctx.beginPath();
     pitchHistory.forEach((f, i) => {
       const m = freqToMidi(f);
@@ -522,192 +507,220 @@ export default function PitchTestPiano() {
     ctx.stroke();
   }
 
+  const isRunning = status === "running";
+  const isBusy = status === "retrying";
+
   return (
-    <div
-      style={{
-        fontFamily: "sans-serif",
-        maxWidth: 1000,
-        margin: "0 auto",
-        padding: 16,
-        textAlign: "center"
-      }}
-    >
+    <div className="relative">
+      {/* 상단 큰 캔버스 영역 (스크린샷처럼 ‘큰 유리 카드’ 안에 꽉) */}
+      <div className="p-8 md:p-10">
+        <div className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl overflow-hidden">
+          <div className="p-6 md:p-8">
+            <canvas
+              ref={canvasRef}
+              width={1200}
+              height={520}
+              className="w-full h-[340px] md:h-[420px] rounded-2xl bg-white"
+            />
 
-      <h2>사용자 음역대 테스트</h2>
-      <div>
-        <button onClick={startSequence} disabled={status === "running"}>
-          테스트 시작
-        </button>
-        <button onClick={stopAll}>중단</button>
-      </div>
-      <div>
-        상태: {status} {currentNote && `(현재: ${currentNote})`}
-      </div>
-
-    <div style={{ display: "flex", alignItems: "flex-start", gap: 20, marginTop: 10 }}>
-      {/* 왼쪽: 그래프 (크기 그대로 유지) */}
-      <canvas
-        ref={canvasRef}
-        width={900}
-        height={600}
-        style={{ border: "1px solid black" }}
-      />
-
-      {/* 오른쪽: 표 컨테이너 */}
-      <div
-        style={{
-          flexShrink: 0,
-          maxHeight: 600,            // 그래프 높이에 맞춤
-          overflowY: "auto",         // 표가 길면 스크롤
-          border: "1px solid #ccc",  // 표 테두리 구분용 (선택)
-          padding: 8,                // 표 주변 여백
-          background: "white",       // 캔버스 배경과 구분
-          minWidth: 300              // 폭 최소 확보 (모양 깨짐 방지)
-        }}
-      >
-        <h3 style={{ marginTop: 0 }}>결과 테이블</h3>
-        <table
-          border="1"
-          cellPadding="5"
-          style={{
-            borderCollapse: "collapse",
-            width: "100%",            // 표 폭이 꽉 차도록
-            textAlign: "center"
-          }}
-        >
-          <thead style={{ background: "#f0f0f0" }}>
-            <tr>
-              <th>음</th>
-              <th>Strong%</th>
-              <th>Weak%</th>
-              <th>판정</th>
-            </tr>
-          </thead>
-          <tbody>
-            {results.map((r, i) => (
-              <tr
-                key={i}
-                style={{
-                  background:
-                    r.grade === "Strong OK"
-                      ? "#9cff9c"
-                      : r.grade === "Weak OK"
-                      ? "#ffe699"
-                      : "#ff9999",
-                }}
-              >
-                <td>{r.note}</td>
-                <td>{(r.strong * 100).toFixed(0)}%</td>
-                <td>{(r.weak * 100).toFixed(0)}%</td>
-                <td>{r.grade}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        {/* 🎯 재도전 UI: 테스트 완료 상태일 때 */}
-        {status === "done" && (
-          <div style={{ marginTop: 16 }}>
-            <h3>🎯 재도전 가능한 음 (음별 1회)</h3>
-            <p style={{ marginTop: 6, marginBottom: 6 }}>
-              <strong>최저음/최고음 경계에 인접한 Weak OK</strong> 음과,<br></br>  
-              <strong>Strong OK 범위 내부의 Weak OK / Fail</strong> 음만 재도전할 수 있습니다.
-            </p>
-
-
-            <div>
-              {(() => {
-              // 1️⃣ Strong OK 인덱스 찾기
-              const strongIndices = results
-                .map((r, i) => ({ i, grade: r.grade }))
-                .filter(x => x.grade === "Strong OK")
-                .map(x => x.i);
-
-              if (strongIndices.length < 1)
-                return <p>Strong OK 음이 없어 재도전할 수 없습니다.</p>;
-
-              const minStrong = Math.min(...strongIndices);
-              const maxStrong = Math.max(...strongIndices);
-
-              // 2️⃣ 내부 약/실패 음 (Strong OK 사이)
-              const internal = results
-                .map((r, i) => ({ ...r, i }))
-                .filter(
-                  x =>
-                    x.i > minStrong &&
-                    x.i < maxStrong &&
-                    (x.grade === "Weak OK" || x.grade === "Fail")
-                );
-
-              // 3️⃣ 하단 인접 Weak OK 연속 구간 (Strong OK 최저음보다 낮은)
-              const lower = [];
-              for (let i = minStrong - 1; i >= 0; i--) {
-                const r = results[i];
-                if (!r || r.grade !== "Weak OK") break;
-                lower.push({ ...r, i });
-              }
-
-              // 4️⃣ 상단 인접 Weak OK 연속 구간 (Strong OK 최고음보다 낮은)
-              const higher = [];
-              for (let i = maxStrong + 1; i < results.length; i++) {
-                const r = results[i];
-                if (!r || r.grade !== "Weak OK") break;
-                higher.push({ ...r, i });
-              }
-
-              // 5️⃣ 전체 후보 합치기
-              const candidates = [...lower.reverse(), ...internal, ...higher];
-
-              if (candidates.length === 0)
-                return <p>재도전 가능한 음이 없습니다.</p>;
-
-              return (
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {candidates.map(c => (
-                    <button
-                      key={c.note}
-                      onClick={() => retryNote(c.note)}
-                      disabled={retryingNote !== null || retriedNotes.includes(c.note)}
-                      style={{ padding: "6px 10px" }}
-                    >
-                      {retryingNote === c.note
-                        ? `${c.note} 재측정 중...`
-                        : retriedNotes.includes(c.note)
-                        ? `${c.note} 재도전 완료`
-                        : `${c.note} 재도전`}
-                    </button>
-                  ))}
-                </div>
-              );
-            })()}
-
+            {/* 상태 텍스트 (작게) */}
+            <div className="mt-5 text-center text-sm text-white/70">
+              상태: <span className="text-white/90">{status}</span>{" "}
+              {currentNote && (
+                <span className="text-white/60"> · 현재: {currentNote}</span>
+              )}
             </div>
           </div>
-        )}
 
+          {/* 하단 마이크 버튼 (스크린샷 스타일) */}
+          <div className="pb-10 flex justify-center">
+            <button
+              onClick={() => (isRunning ? stopAll() : startSequence())}
+              disabled={isBusy}
+              className={`w-20 h-20 rounded-full border border-white/15 bg-white/10 backdrop-blur-xl shadow-2xl shadow-black/40
+                flex items-center justify-center transition
+                ${isBusy ? "opacity-60 cursor-not-allowed" : "hover:bg-white/15 active:scale-95"}
+              `}
+              aria-label={isRunning ? "중단" : "테스트 시작"}
+            >
+              {isRunning ? (
+                <Square className="w-7 h-7 text-white" />
+              ) : (
+                <Mic className="w-7 h-7 text-white" />
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* 기능은 그대로 유지: 결과/재도전/테시투라/다운로드를 ‘아래’에 표시 */}
+        <div className="mt-8 space-y-6">
+          {/* 테시투라 */}
+          {tessitura && (
+            <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-6 text-white">
+              <div className="text-lg font-semibold">🎤 분석된 테시투라</div>
+              <div className="mt-2 text-white/80">
+                <span className="font-semibold text-white">
+                  {tessitura.low} ~ {tessitura.high}
+                </span>{" "}
+                <span className="text-white/60">
+                  (평균 강도 {(tessitura.avgStrong * 100).toFixed(1)}%)
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* 결과 테이블 */}
+          <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl overflow-hidden">
+            <div className="px-6 py-4 flex items-center justify-between">
+              <div className="text-white font-semibold">결과</div>
+              <div className="text-xs text-white/60">
+                Strong / Weak 판정 표
+              </div>
+            </div>
+
+            <div className="max-h-[420px] overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-black/30 backdrop-blur-md">
+                  <tr className="text-white/80">
+                    <th className="text-left px-6 py-3 font-medium">음</th>
+                    <th className="text-left px-6 py-3 font-medium">Strong%</th>
+                    <th className="text-left px-6 py-3 font-medium">Weak%</th>
+                    <th className="text-left px-6 py-3 font-medium">판정</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {results.map((r, i) => {
+                    const rowBg =
+                      r.grade === "Strong OK"
+                        ? "bg-emerald-500/20"
+                        : r.grade === "Weak OK"
+                        ? "bg-amber-500/20"
+                        : "bg-rose-500/20";
+
+                    return (
+                      <tr key={i} className={`border-t border-white/10 ${rowBg}`}>
+                        <td className="px-6 py-3 text-white font-medium">{r.note}</td>
+                        <td className="px-6 py-3 text-white/90">
+                          {(r.strong * 100).toFixed(0)}%
+                        </td>
+                        <td className="px-6 py-3 text-white/90">
+                          {(r.weak * 100).toFixed(0)}%
+                        </td>
+                        <td className="px-6 py-3 text-white/90">{r.grade}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+
+              {results.length === 0 && (
+                <div className="px-6 py-10 text-center text-white/60">
+                  아직 결과가 없습니다. 마이크 버튼을 눌러 테스트를 시작하세요.
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 재도전 UI (기능 그대로) */}
+          {status === "done" && (
+            <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-6 text-white">
+              <div className="text-lg font-semibold">🎯 재도전 가능한 음 (음별 1회)</div>
+              <p className="mt-2 text-sm text-white/70 leading-relaxed">
+                <strong className="text-white">최저음/최고음 경계에 인접한 Weak OK</strong> 음과,
+                <br />
+                <strong className="text-white">Strong OK 범위 내부의 Weak OK / Fail</strong> 음만 재도전할 수 있습니다.
+              </p>
+
+              <div className="mt-4">
+                {(() => {
+                  const strongIndices = results
+                    .map((r, i) => ({ i, grade: r.grade }))
+                    .filter((x) => x.grade === "Strong OK")
+                    .map((x) => x.i);
+
+                  if (strongIndices.length < 1)
+                    return <p className="text-white/70">Strong OK 음이 없어 재도전할 수 없습니다.</p>;
+
+                  const minStrong = Math.min(...strongIndices);
+                  const maxStrong = Math.max(...strongIndices);
+
+                  const internal = results
+                    .map((r, i) => ({ ...r, i }))
+                    .filter(
+                      (x) =>
+                        x.i > minStrong &&
+                        x.i < maxStrong &&
+                        (x.grade === "Weak OK" || x.grade === "Fail")
+                    );
+
+                  const lower = [];
+                  for (let i = minStrong - 1; i >= 0; i--) {
+                    const r = results[i];
+                    if (!r || r.grade !== "Weak OK") break;
+                    lower.push({ ...r, i });
+                  }
+
+                  const higher = [];
+                  for (let i = maxStrong + 1; i < results.length; i++) {
+                    const r = results[i];
+                    if (!r || r.grade !== "Weak OK") break;
+                    higher.push({ ...r, i });
+                  }
+
+                  const candidates = [...lower.reverse(), ...internal, ...higher];
+
+                  if (candidates.length === 0)
+                    return <p className="text-white/70">재도전 가능한 음이 없습니다.</p>;
+
+                  return (
+                    <div className="flex flex-wrap gap-2">
+                      {candidates.map((c) => (
+                        <button
+                          key={c.note}
+                          onClick={() => retryNote(c.note)}
+                          disabled={retryingNote !== null || retriedNotes.includes(c.note)}
+                          className={`px-3 py-2 rounded-xl border border-white/15 bg-white/10 hover:bg-white/15 transition text-sm
+                            ${
+                              retryingNote !== null || retriedNotes.includes(c.note)
+                                ? "opacity-60 cursor-not-allowed"
+                                : ""
+                            }`}
+                        >
+                          {retryingNote === c.note
+                            ? `${c.note} 재측정 중...`
+                            : retriedNotes.includes(c.note)
+                            ? `${c.note} 재도전 완료`
+                            : `${c.note} 재도전`}
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+
+          {/* 다운로드 (기능 그대로) */}
+          {downloadUrl && (
+            <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-6 text-white flex items-center justify-between gap-4">
+              <div>
+                <div className="font-semibold">녹음 파일</div>
+                <div className="text-sm text-white/70">WAV로 다운로드할 수 있어요.</div>
+              </div>
+
+              <a
+                href={downloadUrl}
+                download={`pitchtest_${Date.now()}.wav`}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 transition"
+              >
+                <Download className="w-4 h-4" />
+                WAV 다운로드
+              </a>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
-
-      {tessitura && (
-        <div style={{ marginTop: 20 }}>
-          <h3>🎤 분석된 테시투라</h3>
-          <p>
-            <strong>
-              {tessitura.low} ~ {tessitura.high}
-            </strong>{" "}
-            (평균 강도 {(tessitura.avgStrong * 100).toFixed(1)}%)
-          </p>
-        </div>
-      )}
-
-      {downloadUrl && (
-        <div style={{ marginTop: 12 }}>
-          <h4>녹음 파일</h4>
-          <a href={downloadUrl} download={`pitchtest_${Date.now()}.wav`}>
-            WAV 다운로드
-          </a>
-        </div>
-      )}
     </div>
   );
 }

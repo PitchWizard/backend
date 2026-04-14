@@ -40,8 +40,16 @@ def analyze_audio_summary(source: str, hop_length=HOP_LENGTH_DEFAULT, plot=False
     print("[4/5] RMVPE 피치 추출 중…", flush=True)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     rmvpe_model = RMVPE(RMVPE_MODEL_PATH, is_half=False, device=device)
-    f0_hz = rmvpe_model.infer_from_audio(y, thred=0.03)
+    f0_hz = rmvpe_model.infer_from_audio(y, thred=0.05)
     f0_hz = np.where(f0_hz > 0, f0_hz, np.nan)  # 0(무성음) → NaN
+
+    # RMS 에너지가 낮은 구간(무음/잔류 악기) 피치 제거
+    rms_frames = np.array([
+        np.sqrt(np.mean(y[i * RMVPE_HOP: (i + 1) * RMVPE_HOP] ** 2))
+        for i in range(len(f0_hz))
+    ])
+    rms_threshold = np.percentile(rms_frames[rms_frames > 0], 15)  # 하위 15% 제거
+    f0_hz = np.where(rms_frames > rms_threshold, f0_hz, np.nan)
     times = np.arange(len(f0_hz)) * (RMVPE_HOP / RMVPE_SR)  # 10ms 단위
 
     rms, _ = compute_rms(y, sr, hop_length=hop_length)
