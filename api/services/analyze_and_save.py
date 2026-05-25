@@ -44,7 +44,7 @@ def analyze_and_save(
     audio_path: str,
     hop_length: int = 256,
     plot: bool = False,
-) -> tuple[int, str | None]:
+) -> tuple[int, str | None, str | None]:
     """
     1) analyzer 실행 (RMVPE)
     2) 결과 5개 지표만 추출
@@ -92,4 +92,4 @@ def analyze_and_save(
         with open(frames_path, "w") as f:
             json.dump(pitch_frames, f)
 
-    return song_id, out.get("instrumental_path")
+    return song_id, out.get("instrumental_path"), out.get("mdx_instrumental_path")

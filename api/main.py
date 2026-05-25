@@ -162,17 +162,23 @@ async def run_analysis_and_create_song(
     tmpdir = tempfile.mkdtemp(prefix="wizard_")
     try:
         # 1) 서비스 호출: 다운로드 + 분석 + DB 저장
-        song_id, instrumental_src = analyze_and_save(
+        song_id, instrumental_src, mdx_instrumental_src = analyze_and_save(
             title=title,
             artist=artist,
             audio_path=url,
         )
 
-        # 2) 반주 파일 영구 저장
+        # 2) Kim Vocal 반주 파일 영구 저장 ({song_id}.wav)
         if instrumental_src and os.path.exists(instrumental_src):
             ext = os.path.splitext(instrumental_src)[1] or ".wav"
             dest = os.path.join(INSTRUMENTAL_DIR, f"{song_id}{ext}")
             shutil.move(instrumental_src, dest)
+
+        # 3) MDX Main Inst 반주 파일 영구 저장 ({song_id}_mdx.wav)
+        if mdx_instrumental_src and os.path.exists(mdx_instrumental_src):
+            ext = os.path.splitext(mdx_instrumental_src)[1] or ".wav"
+            dest = os.path.join(INSTRUMENTAL_DIR, f"{song_id}_mdx{ext}")
+            shutil.move(mdx_instrumental_src, dest)
 
         # 3) 생성된 레코드 읽어서 반환
         row = db.get(models.Song, song_id)
@@ -307,35 +313,40 @@ def get_pitch_frames(song_id: int, db: Session = Depends(get_db)):
 def get_accompaniment(
     song_id: int,
     semitones: float = Query(0, ge=-5, le=5),
+    model: str = Query("kim", pattern="^(kim|mdx)$"),
     db: Session = Depends(get_db),
 ):
     """
     저장된 반주 파일을 semitones만큼 피치시프트하여 반환.
     semitones: -5 ~ +5 (기본값 0 = 원본)
+    model: "kim" = Kim Vocal 2 (기본값), "mdx" = UVR-MDX-NET-Inst_Main
     """
     from analyzer.pitch_shift import shift_accompaniment
 
-    # 반주 파일 탐색 (wav/mp3/flac 모두 허용)
+    # 모델별 파일 접미사: kim → {song_id}.wav, mdx → {song_id}_mdx.wav
+    suffix = "_mdx" if model == "mdx" else ""
+
     instrumental_path = None
     for ext in (".wav", ".mp3", ".flac"):
-        candidate = os.path.join(INSTRUMENTAL_DIR, f"{song_id}{ext}")
+        candidate = os.path.join(INSTRUMENTAL_DIR, f"{song_id}{suffix}{ext}")
         if os.path.exists(candidate):
             instrumental_path = candidate
             break
 
     if instrumental_path is None:
+        model_label = "MDX Main Inst" if model == "mdx" else "Kim Vocal 2"
         raise HTTPException(
             status_code=404,
-            detail=f"반주 파일이 없습니다. /songs/run 으로 먼저 분석을 실행하세요. (song_id={song_id})",
+            detail=f"{model_label} 반주 파일이 없습니다. /songs/run 으로 먼저 분석을 실행하세요. (song_id={song_id})",
         )
 
     # 원본 요청이면 그대로 반환
     if semitones == 0:
-        return FileResponse(instrumental_path, media_type="audio/wav", filename=f"song_{song_id}_original.wav")
+        return FileResponse(instrumental_path, media_type="audio/wav", filename=f"song_{song_id}_{model}_original.wav")
 
     # 캐시된 파일이 있으면 재사용
     sign = "+" if semitones > 0 else ""
-    shifted_filename = f"{song_id}_{sign}{semitones}.wav"
+    shifted_filename = f"{song_id}_{model}_{sign}{semitones}.wav"
     shifted_path = os.path.join(SHIFTED_DIR, shifted_filename)
 
     if not os.path.exists(shifted_path):

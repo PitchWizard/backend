@@ -1,5 +1,5 @@
 # analyzer/analyzer.py
-from .audio_io import download_youtube_audio, separate_vocals_uvr5_mdx, load_audio
+from .audio_io import download_youtube_audio, separate_vocals_uvr5_mdx, separate_accompaniment_mdx_main, load_audio
 from .features import summarize_pitch, summarize_energy, compute_rms
 from .utils import midi_to_note
 
@@ -25,6 +25,7 @@ def analyze_audio_summary(source: str, hop_length=HOP_LENGTH_DEFAULT, plot=False
         source = download_youtube_audio(source)
 
     vocals_path, instrumental_path = separate_vocals_uvr5_mdx(source)
+    mdx_instrumental_path = separate_accompaniment_mdx_main(source)
 
     # RMVPE는 16kHz 필요
     y, sr = load_audio(vocals_path, target_sr=RMVPE_SR, mono=True)
@@ -85,6 +86,7 @@ def analyze_audio_summary(source: str, hop_length=HOP_LENGTH_DEFAULT, plot=False
         "rms_mean": float(e_sum.rms_mean),
         "rms_std": float(e_sum.rms_std),
         "instrumental_path": instrumental_path,
+        "mdx_instrumental_path": mdx_instrumental_path,
         "pitch_frames": {
             "hop_ms": 10,
             "times": times_list,

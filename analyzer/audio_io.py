@@ -67,6 +67,52 @@ def separate_vocals_uvr5_mdx(input_path: str) -> tuple[str, str]:
     print("[2/5] 분리 완료", flush=True)
     return vocals_path, instrumental_path
 
+
+def separate_accompaniment_mdx_main(input_path: str) -> str:
+    """UVR-MDX-NET-Inst_Main 모델로 반주를 분리한다.
+
+    Returns:
+        instrumental_path
+    """
+    try:
+        from audio_separator.separator import Separator
+    except ImportError:
+        raise ImportError(
+            "audio-separator 패키지가 필요합니다.\n"
+            "GPU 사용: pip install audio-separator[gpu]\n"
+            "CPU 전용: pip install audio-separator"
+        )
+
+    print("[2b/5] UVR-MDX-NET-Inst_Main 반주 분리 중…", flush=True)
+    tmp_out = tempfile.mkdtemp()
+    separator = Separator(output_dir=tmp_out)
+    separator.load_model("UVR-MDX-NET-Inst_Main.onnx")
+    output_files = separator.separate(input_path)
+
+    instrumental_path = None
+    for f in output_files:
+        basename = os.path.basename(f)
+        full = f if os.path.isabs(f) else os.path.join(tmp_out, basename)
+        if "(Instrumental)" in basename:
+            instrumental_path = full
+            break
+
+    # fallback: 보컬 파일이 아닌 것 선택
+    if instrumental_path is None:
+        for f in output_files:
+            basename = os.path.basename(f)
+            full = f if os.path.isabs(f) else os.path.join(tmp_out, basename)
+            if "(Vocals)" not in basename:
+                instrumental_path = full
+                break
+
+    if instrumental_path is None:
+        raise FileNotFoundError("MDX 분리 결과에서 반주 파일을 찾을 수 없음")
+
+    print("[2b/5] MDX 반주 분리 완료", flush=True)
+    return instrumental_path
+
+
 def load_audio(source: str, target_sr: int = 22050, mono: bool = True, trim: bool = False) -> Tuple[np.ndarray, int]:
     print("[3/5] 오디오 로딩 중…", flush=True)
     y, sr = librosa.load(source, sr=None, mono=mono)
