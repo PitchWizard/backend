@@ -1,4 +1,4 @@
-// PitchTestpiano.jsx
+﻿// PitchTestpiano.jsx
 import React, { useEffect, useRef, useState } from "react";
 import { Mic, Square, Download } from "lucide-react";
 
@@ -456,270 +456,348 @@ export default function PitchTestPiano({ userId, onTestComplete }) {
     const ctx = canvas.getContext("2d");
     const width = canvas.width,
       height = canvas.height;
+    const pad = { top: 26, right: 26, bottom: 24, left: 56 };
+    const plotX = pad.left;
+    const plotY = pad.top;
+    const plotW = width - pad.left - pad.right;
+    const plotH = height - pad.top - pad.bottom;
 
     ctx.clearRect(0, 0, width, height);
-
-    // 흰 배경 유지 (어두운 UI 위에서도 가독성 확보)
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, width, height);
 
     const minMidi = 36; // C2
     const maxMidi = 96; // C7
 
+    const midiToY = (m) => plotY + ((maxMidi - m) / (maxMidi - minMidi)) * plotH;
+
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.fillStyle = "#f8fafc";
+    ctx.fillRect(plotX, plotY, plotW, plotH);
+
+    ctx.strokeStyle = "#d8dee8";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(plotX, plotY, plotW, plotH);
+
     for (let m = minMidi; m <= maxMidi; m++) {
-      const y = ((maxMidi - m) / (maxMidi - minMidi)) * height;
+      const isOctave = m % 12 === 0;
+      const y = midiToY(m);
       ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(width, y);
-      ctx.strokeStyle = m % 12 === 0 ? "#777" : "#ddd";
-      ctx.lineWidth = m % 12 === 0 ? 2 : 1;
+      ctx.moveTo(plotX, y);
+      ctx.lineTo(plotX + plotW, y);
+      ctx.strokeStyle = isOctave ? "#b9c2d0" : "#e8edf3";
+      ctx.lineWidth = isOctave ? 1.5 : 1;
       ctx.stroke();
-      if (m % 12 === 0) {
-        ctx.fillStyle = "black";
-        ctx.font = "12px sans-serif";
-        ctx.fillText(midiToNoteName(m), 8, y - 4);
+
+      if (isOctave) {
+        ctx.fillStyle = "#334155";
+        ctx.font = "600 13px sans-serif";
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+        ctx.fillText(midiToNoteName(m), plotX - 10, y);
       }
     }
 
     if (currentNote) {
       const noteObj = NOTES_TO_TEST.find((x) => x.note === currentNote);
       if (noteObj) {
-        const y = ((maxMidi - noteObj.midi) / (maxMidi - minMidi)) * height;
-        ctx.strokeStyle = "red";
-        ctx.lineWidth = 2;
+        const y = midiToY(noteObj.midi);
+        ctx.strokeStyle = "#ef476f";
+        ctx.lineWidth = 2.5;
+        ctx.setLineDash([8, 8]);
         ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(width, y);
+        ctx.moveTo(plotX, y);
+        ctx.lineTo(plotX + plotW, y);
         ctx.stroke();
+        ctx.setLineDash([]);
+
+        const label = `목표 ${currentNote}`;
+        ctx.font = "700 13px sans-serif";
+        const labelW = ctx.measureText(label).width + 18;
+        const labelH = 26;
+        const labelX = plotX + plotW - labelW - 10;
+        const labelY = Math.max(plotY + 8, Math.min(y - labelH - 8, plotY + plotH - labelH - 8));
+        ctx.fillStyle = "#fff1f4";
+        ctx.strokeStyle = "#ffc0cf";
+        ctx.lineWidth = 1;
+        roundRect(ctx, labelX, labelY, labelW, labelH, 8);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = "#c9184a";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(label, labelX + labelW / 2, labelY + labelH / 2);
       }
     }
 
-    ctx.strokeStyle = "#0b5cff";
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = "#2563eb";
+    ctx.lineWidth = 3;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
     ctx.beginPath();
     pitchHistory.forEach((f, i) => {
       const m = freqToMidi(f);
-      const y = ((maxMidi - m) / (maxMidi - minMidi)) * height;
-      const x = (i / Math.max(1, pitchHistory.length - 1)) * width;
+      const y = midiToY(m);
+      const x = plotX + (i / Math.max(1, pitchHistory.length - 1)) * plotW;
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     });
     ctx.stroke();
+    ctx.lineCap = "butt";
+    ctx.lineJoin = "miter";
+  }
+
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
   }
 
   const isRunning = status === "running";
   const isBusy = status === "retrying";
+  const statusLabel =
+    status === "idle"
+      ? "대기 중"
+      : status === "running"
+      ? "측정 중"
+      : status === "retrying"
+      ? "재측정 중"
+      : "완료";
 
   return (
-    <div className="relative">
-      {/* 상단 큰 캔버스 영역 (스크린샷처럼 ‘큰 유리 카드’ 안에 꽉) */}
-      <div className="p-8 md:p-10">
-        <div className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl overflow-hidden">
-          <div className="p-6 md:p-8">
-            <canvas
-              ref={canvasRef}
-              width={1200}
-              height={520}
-              className="w-full h-[340px] md:h-[420px] rounded-2xl bg-white"
-            />
-
-            {/* 상태 텍스트 (작게) */}
-            <div className="mt-5 text-center text-sm text-white/70">
-              상태: <span className="text-white/90">{status}</span>{" "}
-              {currentNote && (
-                <span className="text-white/60"> · 현재: {currentNote}</span>
-              )}
+    <div className="relative p-6 md:p-8 text-white">
+      <div className="grid gap-6 md:gap-7">
+        <section className="rounded-3xl border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.1),rgba(255,255,255,0.03))] shadow-[0_18px_45px_rgba(0,0,0,0.28)] backdrop-blur-xl overflow-hidden">
+          <div className="px-5 md:px-7 pt-5 md:pt-6 pb-4 border-b border-white/10 flex flex-wrap items-center justify-between gap-3">
+            <div className="text-sm text-white/75">
+              상태: <span className="text-white font-semibold">{statusLabel}</span>
+              {currentNote && <span className="text-white/60"> · 현재 음: {currentNote}</span>}
             </div>
+            <div className="text-xs text-white/55">측정 중에는 조용한 환경을 권장합니다</div>
           </div>
 
-          {/* 하단 마이크 버튼 (스크린샷 스타일) */}
-          <div className="pb-10 flex justify-center">
-            <button
-              onClick={() => (isRunning ? stopAll() : startSequence())}
-              disabled={isBusy}
-              className={`w-20 h-20 rounded-full border border-white/15 bg-white/10 backdrop-blur-xl shadow-2xl shadow-black/40
-                flex items-center justify-center transition
-                ${isBusy ? "opacity-60 cursor-not-allowed" : "hover:bg-white/15 active:scale-95"}
-              `}
-              aria-label={isRunning ? "중단" : "테스트 시작"}
-            >
-              {isRunning ? (
-                <Square className="w-7 h-7 text-white" />
-              ) : (
-                <Mic className="w-7 h-7 text-white" />
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* 기능은 그대로 유지: 결과/재도전/테시투라/다운로드를 ‘아래’에 표시 */}
-        <div className="mt-8 space-y-6">
-          {/* 테시투라 */}
-          {tessitura && (
-            <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-6 text-white">
-              <div className="text-lg font-semibold">🎤 분석된 테시투라</div>
-              <div className="mt-2 text-white/80">
-                <span className="font-semibold text-white">
-                  {tessitura.low} ~ {tessitura.high}
-                </span>{" "}
-                <span className="text-white/60">
-                  (평균 강도 {(tessitura.avgStrong * 100).toFixed(1)}%)
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* 결과 테이블 */}
-          <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl overflow-hidden">
-            <div className="px-6 py-4 flex items-center justify-between">
-              <div className="text-white font-semibold">결과</div>
-              <div className="text-xs text-white/60">
-                Strong / Weak 판정 표
-              </div>
-            </div>
-
-            <div className="max-h-[420px] overflow-auto">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-black/30 backdrop-blur-md">
-                  <tr className="text-white/80">
-                    <th className="text-left px-6 py-3 font-medium">음</th>
-                    <th className="text-left px-6 py-3 font-medium">Strong%</th>
-                    <th className="text-left px-6 py-3 font-medium">Weak%</th>
-                    <th className="text-left px-6 py-3 font-medium">판정</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {results.map((r, i) => {
-                    const rowBg =
-                      r.grade === "Strong OK"
-                        ? "bg-emerald-500/20"
-                        : r.grade === "Weak OK"
-                        ? "bg-amber-500/20"
-                        : "bg-rose-500/20";
-
-                    return (
-                      <tr key={i} className={`border-t border-white/10 ${rowBg}`}>
-                        <td className="px-6 py-3 text-white font-medium">{r.note}</td>
-                        <td className="px-6 py-3 text-white/90">
-                          {(r.strong * 100).toFixed(0)}%
-                        </td>
-                        <td className="px-6 py-3 text-white/90">
-                          {(r.weak * 100).toFixed(0)}%
-                        </td>
-                        <td className="px-6 py-3 text-white/90">{r.grade}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-
-              {results.length === 0 && (
-                <div className="px-6 py-10 text-center text-white/60">
-                  아직 결과가 없습니다. 마이크 버튼을 눌러 테스트를 시작하세요.
+          <div className="p-5 md:p-7">
+            <div className="overflow-hidden rounded-2xl border border-white/15 bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_16px_36px_rgba(0,0,0,0.18)]">
+              <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/95 px-4 py-3 text-slate-700 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#00b896]" />
+                  <span>{currentNote ? `현재 목표음 ${currentNote}` : "피치 그래프"}</span>
                 </div>
-              )}
+
+                <div className="flex items-center gap-4 text-xs font-medium text-slate-500">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="h-0.5 w-5 rounded-full bg-[#2563eb]" />
+                    내 피치
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="h-0.5 w-5 rounded-full border-t-2 border-dashed border-[#ef476f]" />
+                    목표음
+                  </span>
+                </div>
+              </div>
+
+              <canvas
+                ref={canvasRef}
+                width={1200}
+                height={520}
+                className="block w-full h-[310px] md:h-[440px] xl:h-[490px] bg-white"
+              />
+            </div>
+
+            <div className="pt-6 flex justify-center">
+              <button
+                onClick={() => (isRunning ? stopAll() : startSequence())}
+                disabled={isBusy}
+                className={`group w-[84px] h-[84px] rounded-full border border-white/20 bg-[radial-gradient(circle_at_30%_30%,#2de3bf,#00b896)] text-white shadow-[0_16px_35px_rgba(0,0,0,0.35)] flex items-center justify-center transition
+                ${
+                  isBusy
+                    ? "opacity-60 cursor-not-allowed"
+                    : "hover:scale-[1.03] active:scale-95"
+                }`}
+                aria-label={isRunning ? "테스트 중지" : "테스트 시작"}
+              >
+                {isRunning ? (
+                  <Square className="w-8 h-8" />
+                ) : (
+                  <Mic className="w-8 h-8 group-hover:rotate-3 transition-transform" />
+                )}
+              </button>
             </div>
           </div>
+        </section>
 
-          {/* 재도전 UI (기능 그대로) */}
-          {status === "done" && (
-            <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-6 text-white">
-              <div className="text-lg font-semibold">🎯 재도전 가능한 음 (음별 1회)</div>
-              <p className="mt-2 text-sm text-white/70 leading-relaxed">
-                <strong className="text-white">최저음/최고음 경계에 인접한 Weak OK</strong> 음과,
-                <br />
-                <strong className="text-white">Strong OK 범위 내부의 Weak OK / Fail</strong> 음만 재도전할 수 있습니다.
-              </p>
+        {tessitura && (
+          <section className="rounded-2xl border border-emerald-300/25 bg-emerald-400/10 backdrop-blur-xl p-5 md:p-6">
+            <div className="text-sm text-emerald-100/90">분석된 테시투라</div>
+            <div className="mt-2 text-2xl font-bold text-white">
+              {tessitura.low} - {tessitura.high}
+            </div>
+            <div className="mt-1 text-sm text-emerald-100/80">
+              평균 강도 {(tessitura.avgStrong * 100).toFixed(1)}%
+            </div>
+          </section>
+        )}
 
-              <div className="mt-4">
-                {(() => {
-                  const strongIndices = results
-                    .map((r, i) => ({ i, grade: r.grade }))
-                    .filter((x) => x.grade === "Strong OK")
-                    .map((x) => x.i);
+        <section className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl overflow-hidden">
+          <div className="px-5 md:px-6 py-4 border-b border-white/10 flex items-center justify-between">
+            <div className="font-semibold text-white">측정 결과</div>
+            <div className="text-xs text-white/60">Strong / Weak 기준 판정</div>
+          </div>
 
-                  if (strongIndices.length < 1)
-                    return <p className="text-white/70">Strong OK 음이 없어 재도전할 수 없습니다.</p>;
+          <div className="max-h-[420px] overflow-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-black/35 backdrop-blur-md">
+                <tr className="text-white/75">
+                  <th className="text-left px-5 md:px-6 py-3 font-medium">음</th>
+                  <th className="text-left px-5 md:px-6 py-3 font-medium">Strong%</th>
+                  <th className="text-left px-5 md:px-6 py-3 font-medium">Weak%</th>
+                  <th className="text-left px-5 md:px-6 py-3 font-medium">판정</th>
+                </tr>
+              </thead>
 
-                  const minStrong = Math.min(...strongIndices);
-                  const maxStrong = Math.max(...strongIndices);
-
-                  const internal = results
-                    .map((r, i) => ({ ...r, i }))
-                    .filter(
-                      (x) =>
-                        x.i > minStrong &&
-                        x.i < maxStrong &&
-                        (x.grade === "Weak OK" || x.grade === "Fail")
-                    );
-
-                  const lower = [];
-                  for (let i = minStrong - 1; i >= 0; i--) {
-                    const r = results[i];
-                    if (!r || r.grade !== "Weak OK") break;
-                    lower.push({ ...r, i });
-                  }
-
-                  const higher = [];
-                  for (let i = maxStrong + 1; i < results.length; i++) {
-                    const r = results[i];
-                    if (!r || r.grade !== "Weak OK") break;
-                    higher.push({ ...r, i });
-                  }
-
-                  const candidates = [...lower.reverse(), ...internal, ...higher];
-
-                  if (candidates.length === 0)
-                    return <p className="text-white/70">재도전 가능한 음이 없습니다.</p>;
+              <tbody>
+                {results.map((r, i) => {
+                  const rowBg =
+                    r.grade === "Strong OK"
+                      ? "bg-emerald-500/12"
+                      : r.grade === "Weak OK"
+                      ? "bg-amber-500/12"
+                      : "bg-rose-500/12";
 
                   return (
-                    <div className="flex flex-wrap gap-2">
-                      {candidates.map((c) => (
-                        <button
-                          key={c.note}
-                          onClick={() => retryNote(c.note)}
-                          disabled={retryingNote !== null || retriedNotes.includes(c.note)}
-                          className={`px-3 py-2 rounded-xl border border-white/15 bg-white/10 hover:bg-white/15 transition text-sm
-                            ${
-                              retryingNote !== null || retriedNotes.includes(c.note)
-                                ? "opacity-60 cursor-not-allowed"
-                                : ""
-                            }`}
+                    <tr key={i} className={`border-t border-white/10 ${rowBg}`}>
+                      <td className="px-5 md:px-6 py-3.5 text-white font-medium">{r.note}</td>
+                      <td className="px-5 md:px-6 py-3.5 text-white/90">{(r.strong * 100).toFixed(0)}%</td>
+                      <td className="px-5 md:px-6 py-3.5 text-white/90">{(r.weak * 100).toFixed(0)}%</td>
+                      <td className="px-5 md:px-6 py-3.5">
+                        <span
+                          className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium border ${
+                            r.grade === "Strong OK"
+                              ? "border-emerald-300/35 text-emerald-100 bg-emerald-500/25"
+                              : r.grade === "Weak OK"
+                              ? "border-amber-300/35 text-amber-100 bg-amber-500/25"
+                              : "border-rose-300/35 text-rose-100 bg-rose-500/25"
+                          }`}
                         >
-                          {retryingNote === c.note
-                            ? `${c.note} 재측정 중...`
-                            : retriedNotes.includes(c.note)
-                            ? `${c.note} 재도전 완료`
-                            : `${c.note} 재도전`}
-                        </button>
-                      ))}
-                    </div>
+                          {r.grade}
+                        </span>
+                      </td>
+                    </tr>
                   );
-                })()}
-              </div>
-            </div>
-          )}
+                })}
+              </tbody>
+            </table>
 
-          {/* 다운로드 (기능 그대로) */}
-          {downloadUrl && (
-            <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-6 text-white flex items-center justify-between gap-4">
-              <div>
-                <div className="font-semibold">녹음 파일</div>
-                <div className="text-sm text-white/70">WAV로 다운로드할 수 있어요.</div>
+            {results.length === 0 && (
+              <div className="px-6 py-12 text-center text-sm text-white/60">
+                아직 결과가 없습니다. 마이크 버튼을 눌러 테스트를 시작해 주세요.
               </div>
+            )}
+          </div>
+        </section>
 
-              <a
-                href={downloadUrl}
-                download={`pitchtest_${Date.now()}.wav`}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 transition"
-              >
-                <Download className="w-4 h-4" />
-                WAV 다운로드
-              </a>
+        {status === "done" && (
+          <section className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-5 md:p-6">
+            <div className="text-base md:text-lg font-semibold text-white">재도전 가능한 음 (음당 1회)</div>
+            <p className="mt-2 text-sm text-white/70 leading-relaxed">
+              Strong OK 경계에 인접한 Weak OK, 그리고 Strong 구간 내부의 Weak OK/Fail 음만 재측정할 수 있습니다.
+            </p>
+
+            <div className="mt-4">
+              {(() => {
+                const strongIndices = results
+                  .map((r, i) => ({ i, grade: r.grade }))
+                  .filter((x) => x.grade === "Strong OK")
+                  .map((x) => x.i);
+
+                if (strongIndices.length < 1) {
+                  return <p className="text-sm text-white/65">Strong OK 음이 없어 재도전할 수 없습니다.</p>;
+                }
+
+                const minStrong = Math.min(...strongIndices);
+                const maxStrong = Math.max(...strongIndices);
+
+                const internal = results
+                  .map((r, i) => ({ ...r, i }))
+                  .filter(
+                    (x) =>
+                      x.i > minStrong &&
+                      x.i < maxStrong &&
+                      (x.grade === "Weak OK" || x.grade === "Fail")
+                  );
+
+                const lower = [];
+                for (let i = minStrong - 1; i >= 0; i--) {
+                  const r = results[i];
+                  if (!r || r.grade !== "Weak OK") break;
+                  lower.push({ ...r, i });
+                }
+
+                const higher = [];
+                for (let i = maxStrong + 1; i < results.length; i++) {
+                  const r = results[i];
+                  if (!r || r.grade !== "Weak OK") break;
+                  higher.push({ ...r, i });
+                }
+
+                const candidates = [...lower.reverse(), ...internal, ...higher];
+
+                if (candidates.length === 0) {
+                  return <p className="text-sm text-white/65">재도전 가능한 음이 없습니다.</p>;
+                }
+
+                return (
+                  <div className="flex flex-wrap gap-2.5">
+                    {candidates.map((c) => (
+                      <button
+                        key={c.note}
+                        onClick={() => retryNote(c.note)}
+                        disabled={retryingNote !== null || retriedNotes.includes(c.note)}
+                        className={`px-3.5 py-2 rounded-xl border border-white/15 bg-white/10 hover:bg-white/15 transition text-sm ${
+                          retryingNote !== null || retriedNotes.includes(c.note)
+                            ? "opacity-60 cursor-not-allowed"
+                            : ""
+                        }`}
+                      >
+                        {retryingNote === c.note
+                          ? `${c.note} 재측정 중...`
+                          : retriedNotes.includes(c.note)
+                          ? `${c.note} 재도전 완료`
+                          : `${c.note} 재도전`}
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
-          )}
-        </div>
+          </section>
+        )}
+
+        {downloadUrl && (
+          <section className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-5 md:p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <div className="font-semibold text-white">녹음 파일</div>
+              <div className="text-sm text-white/70">테스트 음성을 WAV로 다운로드할 수 있습니다.</div>
+            </div>
+
+            <a
+              href={downloadUrl}
+              download={`pitchtest_${Date.now()}.wav`}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 transition text-white"
+            >
+              <Download className="w-4 h-4" />
+              WAV 다운로드
+            </a>
+          </section>
+        )}
       </div>
     </div>
   );
