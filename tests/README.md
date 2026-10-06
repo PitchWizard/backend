@@ -1,11 +1,11 @@
 # PitchWizard 시스템 시험 코드
 
-D07 시스템 시험 결과서의 **자동 시험 34건**을 다시 돌려볼 수 있는 코드입니다.
+D07 시스템 시험 결과서의 **자동 시험 36건**을 다시 돌려볼 수 있는 코드입니다.
 수동 시험 16건(마이크·브라우저 조작)은 사람이 직접 해야 합니다.
 
 | 위치 | 대상 | D07 시험 ID |
 |---|---|---|
-| `wizard/tests/test_backend.py` | FastAPI API, 키 추천, 피치 요약 | STC-T01~T07 (24건 + 실제 변환 1건 STC-T06-012) |
+| `wizard/tests/test_backend.py` | FastAPI API, 키 추천, 피치 요약 | STC-T01~T07 (26건 + 실제 변환 1건 STC-T06-012) |
 | `frontend/tests/logic_test.cjs` | 피치 검출, 테시투라, 반주 채점, 키 범위 제한 | STC-T02-003~006, T05-005, T06-008~011 (9건) |
 
 ## 읽기 전에: 이 시험이 보장하는 것과 못 하는 것
@@ -47,7 +47,7 @@ $env:TEST_DATABASE_URL = "mysql+pymysql://root:<비밀번호>@localhost/wizard_t
 python -m pytest tests -v
 ```
 
-- `24 passed, 1 skipped` 가 나오면 정상입니다.
+- `26 passed, 1 skipped` 가 나오면 정상입니다. (진성 최고음 시험 STC-T02-007, STC-T05-006 포함)
 - 결과를 파일로 남기려면: `python -m pytest tests -v > tests\result_backend.txt`
 - 실제 Rubber Band 변환까지 보려면(오래 걸림): `$env:PW_HEAVY = "1"` 후 다시 실행 → skipped 1건이 실행됩니다.
   (rubberband.exe 가 PATH 또는 프로젝트 폴더에 있어야 함. 이 시험은 아직 한 번도 실행해 보지 못했습니다.)

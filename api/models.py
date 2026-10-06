@@ -43,6 +43,10 @@ class User(Base):
     high_note = Column(String(10), nullable=True)  # 예: "A4"
     avg_rms = Column(Float, nullable=True)         # 전체 평균 RMS
 
+    # 진성 최고음 (가성 시작 음 바로 아래). 없으면 midi_max(가성 포함)로 추천
+    chest_max = Column(Float, nullable=True)
+    chest_high_note = Column(String(10), nullable=True)  # 예: "F4"
+
     created_at = Column(TIMESTAMP, server_default=text("CURRENT_TIMESTAMP"))
     updated_at = Column(
         TIMESTAMP,

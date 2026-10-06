@@ -101,6 +101,32 @@ def test_STC_T02_002_save_vocal_range_unknown_user():
     assert r.status_code == 404
 
 
+def _dave_id():
+    r = client.post("/login", data={"username": "dave", "password": "Passw0rd!"})
+    if r.status_code != 200:
+        _signup("dave", "dave@test.com")
+        r = client.post("/login", data={"username": "dave", "password": "Passw0rd!"})
+    return r.json()["id"]
+
+
+def _save_range(uid, chest_max=None, chest_high_note=None):
+    # 측정 음역 D3~C5(가성 포함). alice 의 음역은 다른 시험이 쓰므로 dave 로 시험
+    return client.post("/vocal-range", json={"user_id": uid, "midi_min": 50, "midi_median": 60,
+                                             "midi_max": 72, "low_note": "D3", "high_note": "C5",
+                                             "chest_max": chest_max, "chest_high_note": chest_high_note})
+
+
+def test_STC_T02_007_save_chest_max():
+    uid = _dave_id()
+    assert _save_range(uid, 65, "F4").status_code == 200
+    r = client.post("/login", data={"username": "dave", "password": "Passw0rd!"}).json()
+    assert (r["midi_max"], r["chest_max"], r["chest_high_note"]) == (72, 65, "F4")
+    # 진성 최고음 없이 다시 저장(새 측정)하면 비워진다
+    assert _save_range(uid).status_code == 200
+    r = client.post("/login", data={"username": "dave", "password": "Passw0rd!"}).json()
+    assert r["chest_max"] is None and r["chest_high_note"] is None
+
+
 # ---------------- T-04 곡 검색(목록) ----------------
 @pytest.fixture(scope="module")
 def songs():
@@ -156,6 +182,24 @@ def test_STC_T05_004_calc_transpose_rules():
     assert calc_smart_transpose(55, 60, 45, 75) is None       # 소화 불가
     assert describe_transpose(0) == "원키로 불러도 무난한 음역대입니다."
     assert describe_transpose(3) == "3키만큼 올려야 합니다."
+
+
+def test_STC_T05_006_transpose_chest_max(songs):
+    # 계산 규칙: 진성 최고음이 있으면 고음 기준을 진성 최고음(+반음 절반 여유)으로 바꾼다
+    assert calc_smart_transpose(50, 72, 59.3, 71.1) == 0                          # 가성 포함 최고음 기준 → 원키
+    assert calc_smart_transpose(50, 72, 59.3, 71.1, chest_max=66) == -5           # 진성 F#4 기준 → 5키 내림
+    assert calc_smart_transpose(50, 72, 59.3, 71.1, chest_max=66, chest_tolerance=0) == -6  # 여유 없으면 -6
+    assert calc_smart_transpose(50, 72, 59.3, 71.1, chest_max=80) == 0            # 측정 최고음보다 높으면 무시
+    assert calc_smart_transpose(50, 72, 48.9, 62.1) == 8                          # 낮은 곡을 가성 최고음까지 끌어올림
+    assert calc_smart_transpose(50, 72, 48.9, 62.1, chest_max=66) == 0            # 진성 기준이면 원키
+    # API: 사용자 정보의 진성 최고음이 추천 키와 추천 목록에 반영된다 (곡A 55~72)
+    uid = _dave_id()
+    _save_range(uid)
+    assert client.get(f"/songs/{songs[0]}/transpose", params={"user_id": uid}).json()["recommended_shift"] == 0
+    _save_range(uid, 65, "F4")
+    assert client.get(f"/songs/{songs[0]}/transpose", params={"user_id": uid}).json()["recommended_shift"] == -7
+    rec = {d["song_id"]: d["recommended_shift"] for d in client.get("/songs/recommend", params={"user_id": uid}).json()}
+    assert rec.get(songs[0]) == -7
 
 
 # ---------------- T-06 반주 연습 ----------------

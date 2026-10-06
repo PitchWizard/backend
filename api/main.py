@@ -87,6 +87,8 @@ class UserOut(BaseModel):
     low_note: str | None = None
     high_note: str | None = None
     avg_rms: float | None = None
+    chest_max: float | None = None
+    chest_high_note: str | None = None
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 class VocalRangeRequest(BaseModel):
@@ -97,6 +99,8 @@ class VocalRangeRequest(BaseModel):
     low_note: str | None = None
     high_note: str | None = None
     avg_rms: float | None = None
+    chest_max: float | None = None
+    chest_high_note: str | None = None
 
 
 # ---------------------------
@@ -247,6 +251,8 @@ def save_vocal_range(data: VocalRangeRequest, db: Session = Depends(get_db)):
     user.low_note = data.low_note
     user.high_note = data.high_note
     user.avg_rms = data.avg_rms
+    user.chest_max = data.chest_max
+    user.chest_high_note = data.chest_high_note
 
     db.commit()
 

@@ -14,17 +14,27 @@ def calc_smart_transpose(
     song_max: float,
     low_tolerance: int = 3,      # 저음은 user_min - 3키까지 허용
     low_song_threshold: int = 4, # 곡 최고음이 user_max보다 4키 이상 낮으면 올려줌
-    max_abs_shift: int = 8       # 전조 최대 범위 (±8키)
+    max_abs_shift: int = 8,      # 전조 최대 범위 (±8키)
+    chest_max: Optional[float] = None,  # 진성 최고음. 있으면 user_max 대신 고음 기준으로 사용
+    chest_tolerance: float = 0.5,       # 진성 기준일 때 반음 절반(50센트)까지는 같은 음으로 허용
 ) -> Optional[int]:
     """
     사용자/곡 음역대를 기반으로 전조 값(k) 계산.
     k > 0: 키 올림, k < 0: 키 내림, k = 0: 원키
+    chest_max 가 없으면 기존과 동일하게 user_max(가성 포함 최고음) 기준.
     """
 
+    # 고음 기준: 진성 최고음이 있으면 그것을, 없으면 측정 최고음을 사용
+    if chest_max is not None:
+        top = min(chest_max, user_max)
+        top_limit = top + chest_tolerance
+    else:
+        top = top_limit = user_max
+
     # 저음 조건: song_min + k >= user_min - low_tolerance
-    # 고음 조건: song_max + k <= user_max
+    # 고음 조건: song_max + k <= top_limit
     low_k_real = (user_min - low_tolerance) - song_min    # k >= low_k_real
-    high_k_real = user_max - song_max                     # k <= high_k_real
+    high_k_real = top_limit - song_max                    # k <= high_k_real
 
     low_k = math.ceil(low_k_real)
     high_k = math.floor(high_k_real)
@@ -37,10 +47,10 @@ def calc_smart_transpose(
     if not candidates:
         return None
 
-    # 곡이 너무 낮은지 판단 (user_max보다 4키 이상 낮으면)
-    gap = user_max - song_max  # 양수면 곡이 사용자보다 낮음
+    # 곡이 너무 낮은지 판단 (고음 기준보다 4키 이상 낮으면)
+    gap = top - song_max  # 양수면 곡이 사용자보다 낮음
     if gap >= low_song_threshold:
-        # 이상적으로는 song_max + k ≈ user_max 가 되도록
+        # 이상적으로는 song_max + k ≈ top 이 되도록
         k_ideal = math.floor(gap)
         best_k = min(
             candidates,
@@ -50,7 +60,7 @@ def calc_smart_transpose(
         # 이미 충분히 높으면, 원키에 가깝게
         best_k = min(
             candidates,
-            key=lambda k: (abs(k), abs((song_max + k) - user_max))
+            key=lambda k: (abs(k), abs((song_max + k) - top))
         )
 
     return best_k
@@ -87,7 +97,7 @@ def get_transpose_for_song(
     song_min = song.midi_min
     song_max = song.midi_max
 
-    k = calc_smart_transpose(user_min, user_max, song_min, song_max)
+    k = calc_smart_transpose(user_min, user_max, song_min, song_max, chest_max=user.chest_max)
 
     result: Dict[str, Any] = {
         "user_id": user_id,
@@ -135,6 +145,7 @@ def get_recommended_songs_for_user(
             song_min=song_min,
             song_max=song_max,
             max_abs_shift=max_abs_shift,
+            chest_max=user.chest_max,
         )
 
         if k is None:
