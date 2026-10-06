@@ -1,0 +1,34 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\RC\wizard\venv311\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\RC\wizard
+plugins: anyio-4.11.0
+collecting ... collected 25 items
+
+tests/test_backend.py::test_STC_T01_001_signup_ok PASSED                 [  4%]
+tests/test_backend.py::test_STC_T01_002_signup_dup_username PASSED       [  8%]
+tests/test_backend.py::test_STC_T01_003_signup_dup_email PASSED          [ 12%]
+tests/test_backend.py::test_STC_T01_004_signup_bad_email PASSED          [ 16%]
+tests/test_backend.py::test_STC_T01_005_login_ok PASSED                  [ 20%]
+tests/test_backend.py::test_STC_T01_006_login_wrong_password PASSED      [ 24%]
+tests/test_backend.py::test_STC_T01_007_login_unknown_user PASSED        [ 28%]
+tests/test_backend.py::test_STC_T02_001_save_vocal_range PASSED          [ 32%]
+tests/test_backend.py::test_STC_T02_002_save_vocal_range_unknown_user PASSED [ 36%]
+tests/test_backend.py::test_STC_T04_001_list_songs PASSED                [ 40%]
+tests/test_backend.py::test_STC_T05_001_transpose_api PASSED             [ 44%]
+tests/test_backend.py::test_STC_T05_002_transpose_unknown PASSED         [ 48%]
+tests/test_backend.py::test_STC_T05_003_recommend_list PASSED            [ 52%]
+tests/test_backend.py::test_STC_T05_004_calc_transpose_rules PASSED      [ 56%]
+tests/test_backend.py::test_STC_T06_001_accompaniment_original PASSED    [ 60%]
+tests/test_backend.py::test_STC_T06_002_accompaniment_cache_reuse PASSED [ 64%]
+tests/test_backend.py::test_STC_T06_003_accompaniment_out_of_range PASSED [ 68%]
+tests/test_backend.py::test_STC_T06_002b_accompaniment_real_shift SKIPPED [ 72%]
+tests/test_backend.py::test_STC_T06_004_accompaniment_bad_model PASSED   [ 76%]
+tests/test_backend.py::test_STC_T06_005_accompaniment_missing_mdx PASSED [ 80%]
+tests/test_backend.py::test_STC_T06_006_pitch_frames PASSED              [ 84%]
+tests/test_backend.py::test_STC_T06_007_pitch_frames_missing PASSED      [ 88%]
+tests/test_backend.py::test_STC_T07_001_run_invalid_url PASSED           [ 92%]
+tests/test_backend.py::test_STC_T07_002_summarize_pitch PASSED           [ 96%]
+tests/test_backend.py::test_STC_T07_003_delete_song PASSED               [100%]
+
+======================== 24 passed, 1 skipped in 1.80s ========================

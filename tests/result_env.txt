@@ -1,0 +1,39 @@
+PitchWizard 시스템 시험 - 실행 환경
+==================================
+
+실행 일시 (KST, +09:00)
+  프론트엔드 시험 (result_frontend.txt)      2026-10-06 19:45:22
+  백엔드 시험 (result_backend.txt)           2026-10-06 19:46:20
+  백엔드 heavy 시험 (result_backend_heavy.txt) 2026-10-06 19:47:00
+
+운영체제
+  Windows 11 Pro 23H2 (10.0.22631, build 22631), 64비트
+
+하드웨어
+  CPU  AMD Ryzen 5 2600 Six-Core Processor (6코어 12스레드)
+  RAM  16.0 GB
+  GPU  NVIDIA GeForce GTX 1660 (6 GB, 드라이버 610.88)
+
+백엔드 (venv311)
+  Python      3.11.9 (MSC v.1938 64 bit)
+  pytest      9.1.1
+  httpx       0.28.1
+  SQLAlchemy  2.0.44
+  PyMySQL     1.1.2
+  FastAPI     0.119.0
+  torch       2.5.1+cu121 (CUDA 사용 가능)
+  분석 모듈   실제 analyzer.analyzer 사용 (대역 아님, PW_STUB_ANALYZER 미설정)
+  Rubber Band rubberband.exe 4.0.0 (프로젝트 루트)
+
+데이터베이스
+  MySQL 8.0.42 (MySQL Community Server - GPL), 서비스 MySQL80
+  시험 DB: wizard_test (utf8mb4 / utf8mb4_unicode_ci, 이번 실행 시 새로 생성)
+  실제 DB(wizard_db)는 사용하지 않음. 시험 전후 행 수·CHECKSUM TABLE 값 동일 확인.
+
+프론트엔드
+  Node.js v22.16.0
+
+결과 요약
+  백엔드          24 passed, 1 skipped
+  프론트엔드      9 passed, 0 failed
+  백엔드 heavy    25 passed (PW_HEAVY=1)
