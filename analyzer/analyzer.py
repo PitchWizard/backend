@@ -85,6 +85,7 @@ def analyze_audio_summary(source: str, hop_length=HOP_LENGTH_DEFAULT, plot=False
         "midi_max_note": midi_to_note(p_sum.midi_max),
         "rms_mean": float(e_sum.rms_mean),
         "rms_std": float(e_sum.rms_std),
+        "vocals_path": vocals_path,
         "instrumental_path": instrumental_path,
         "mdx_instrumental_path": mdx_instrumental_path,
         "pitch_frames": {

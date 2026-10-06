@@ -16,9 +16,11 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INSTRUMENTAL_DIR = os.path.join(_PROJECT_ROOT, "outputs", "instrumentals")
 SHIFTED_DIR = os.path.join(_PROJECT_ROOT, "outputs", "shifted")
 PITCH_FRAMES_DIR = os.path.join(_PROJECT_ROOT, "outputs", "pitch_frames")
+VOCALS_DIR = os.path.join(_PROJECT_ROOT, "outputs", "vocals")
 os.makedirs(INSTRUMENTAL_DIR, exist_ok=True)
 os.makedirs(SHIFTED_DIR, exist_ok=True)
 os.makedirs(PITCH_FRAMES_DIR, exist_ok=True)
+os.makedirs(VOCALS_DIR, exist_ok=True)
 
 
 # DB/ORM
@@ -162,7 +164,7 @@ async def run_analysis_and_create_song(
     tmpdir = tempfile.mkdtemp(prefix="wizard_")
     try:
         # 1) 서비스 호출: 다운로드 + 분석 + DB 저장
-        song_id, instrumental_src, mdx_instrumental_src = analyze_and_save(
+        song_id, instrumental_src, mdx_instrumental_src, vocals_src = analyze_and_save(
             title=title,
             artist=artist,
             audio_path=url,
@@ -179,6 +181,12 @@ async def run_analysis_and_create_song(
             ext = os.path.splitext(mdx_instrumental_src)[1] or ".wav"
             dest = os.path.join(INSTRUMENTAL_DIR, f"{song_id}_mdx{ext}")
             shutil.move(mdx_instrumental_src, dest)
+
+        # 4) 보컬 파일 영구 저장 ({song_id}.wav)
+        if vocals_src and os.path.exists(vocals_src):
+            ext = os.path.splitext(vocals_src)[1] or ".wav"
+            dest = os.path.join(VOCALS_DIR, f"{song_id}{ext}")
+            shutil.move(vocals_src, dest)
 
         # 3) 생성된 레코드 읽어서 반환
         row = db.get(models.Song, song_id)
@@ -309,6 +317,16 @@ def get_pitch_frames(song_id: int, db: Session = Depends(get_db)):
 
 
 # ---------------------------
+@app.get("/songs/{song_id}/vocals")
+def get_vocals(song_id: int, db: Session = Depends(get_db)):
+    """분리된 보컬 파일 반환 (시연용)"""
+    for ext in (".wav", ".mp3", ".flac"):
+        candidate = os.path.join(VOCALS_DIR, f"{song_id}{ext}")
+        if os.path.exists(candidate):
+            return FileResponse(candidate, media_type="audio/wav", filename=f"song_{song_id}_vocals{ext}")
+    raise HTTPException(status_code=404, detail="보컬 파일이 없습니다. /songs/run 으로 먼저 분석을 실행하세요.")
+
+
 @app.get("/songs/{song_id}/accompaniment")
 def get_accompaniment(
     song_id: int,
